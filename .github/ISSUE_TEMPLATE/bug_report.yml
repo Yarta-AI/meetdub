@@ -1,0 +1,52 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what did you get?
+      placeholder: "Ran `meetdub run --to ja` and saw …"
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: meetdub doctor output
+      description: Run `meetdub doctor` and paste the full output.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: meetdub version
+      description: Output of `meetdub --version`.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version + chip
+      placeholder: "macOS 26.4, Apple Silicon"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - OpenAI (api.openai.com)
+        - Azure OpenAI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: |
+        Rerun with `--debug` and paste the first ~80 lines of
+        `~/.meetdub/debug.log`. Redact any secrets first.
+      render: text
