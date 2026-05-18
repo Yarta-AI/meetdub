@@ -38,11 +38,14 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yarta-AI/meetdub/main/install.sh | bash
 
-meetdub auth openai                                   # sk-… を貼り付け（非表示入力）
-meetdub run --to ja --output BlackHole --monitor AirPods --input MacBook
+meetdub auth openai          # sk-… を貼り付け（非表示入力）
+meetdub setup                # 一回だけ: 言語・デバイス・パススルーをウィザード設定
+meetdub run                  # ▶ 翻訳開始
 ```
 
 Teams / Zoom / Meet で **マイク → BlackHole 2ch** を選ぶだけ。
+
+以降の日常運用は `meetdub run`（または言語を切替えたい時だけ `meetdub run --to en`）。
 
 ## 仕組み
 
@@ -75,9 +78,10 @@ Teams / Zoom / Meet で **マイク → BlackHole 2ch** を選ぶだけ。
 
 * 🎭 **声色保持** — `gpt-realtime-translate` がトーン・ピッチ・話速をそのまま訳語に転写。相手には **あなたの声で別言語が届く**
 * 🪄 **どこでも動く** — Teams · Zoom · Google Meet · Slack ハドル · Discord · OBS · QuickTime · FaceTime。マイク選択できるアプリなら全て対応
-* ⚡ **ワンコマンド導入** — Homebrew・BlackHole 2ch・pipx・オーディオ設定ガイドを `install.sh` が全部やる
+* ⚡ **ワンコマンド導入 + setup ウィザード** — `install.sh` が BlackHole / pipx / brew をまとめて入れる。残りは `meetdub setup` 一回で書き込み、以降は `meetdub run` だけ
 * 🌐 **11 言語出力** — English · 日本語 · Español · Français · Deutsch · 中文 · 한국어 · Português · Italiano · हिन्दी · Русский（+ Indonesian / Vietnamese）
 * ⌨️ **会議中に言語ホットスワップ** — F2-F12 で再起動なしに翻訳先言語を切替
+* 🎚️ **パススルー音量ライブ調整** — `+ / - / 0` で元音声のミックス量を調整。多言語会議で相手が自分の母語で話す時の無音回避（cookbook 推奨）
 * 🔇 **Push-to-translate** — `--ptt` モードで Space 押下中のみ翻訳。多言語ミーティングで相手の話す番は翻訳しないユースケース向け
 * 💸 **コストメーター** — TUI に API 使用料がリアルタイム表示。請求の不意打ちなし
 * 📝 **バイリンガル議事録** — セッション毎に `~/.meetdub/transcripts/` へ Markdown 自動保存
@@ -169,27 +173,25 @@ meetdub auth path                  # ファイルパス表示
 
 ## 起動
 
-```bash
-meetdub run --to ja                                     # 日本語に翻訳
-meetdub run --to es --ptt                               # スペイン語、Push-to-translate
-meetdub run --to fr --monitor "MacBook Pro Speakers"    # 自分の耳でも確認
-meetdub run --to ja --azure                             # Azure 使用（`meetdub auth azure` 済み前提）
-```
-
-### Teams / Zoom 用の推奨構成
+`meetdub setup` 済みなら通常のコマンドはこれだけ:
 
 ```bash
-meetdub run --to en \
-  --input  "MacBook" \
-  --output "BlackHole" \
-  --monitor "AirPods"
+meetdub run
 ```
 
-| フラグ | 効果 |
-| --- | --- |
-| `--input "MacBook"` | 内蔵マイクから取得。AirPods マイクは拾いが甘いことが多い |
-| `--output "BlackHole"` | 翻訳音声を BlackHole 2ch に流す → Teams がこれをマイク入力として読む |
-| `--monitor "AirPods"` | 同じ翻訳音声を AirPods にも流す → 自分でモニタリング可能 |
+一時的な上書き:
+
+```bash
+meetdub run --to en                  # このセッションだけ翻訳先を変更
+meetdub run --ptt                    # Push-to-translate モード
+meetdub run --passthrough            # 元音声を 15% でミックス（+/- で調整）
+meetdub run --azure                  # Azure バックエンドを使用
+```
+
+`meetdub setup` を飛ばしてもデフォルト値で動きます:
+- **Output** → `BlackHole 2ch`（Teams/Zoom がマイクとして読む仮想デバイス）
+- **Input** → MacBook 内蔵マイクを自動選択（AirPods マイクは翻訳精度が出にくいため）
+- **Monitor** → なし（自分の翻訳音声は聞こえない。聞きたい時は `--monitor "AirPods"` 等を追加）
 
 Teams / Zoom / Meet 側の設定:
 - **マイク:** `BlackHole 2ch`
@@ -201,8 +203,14 @@ Teams / Zoom / Meet 側の設定:
 | キー | 動作 |
 | --- | --- |
 | `F2` `F3` `F4` `F5` `F6` `F7` `F8` `F9` `F10` `F11` `F12` | EN · JA · ES · FR · DE · ZH · KO · PT · IT · HI · RU |
+| `+` / `-` | パススルー音量 ±5% |
+| `0` | パススルー ミュート |
 | `Space` (長押し、`--ptt` 時) | push-to-translate |
 | `Esc` | 終了 |
+
+キー入力には 2 経路あります:
+1. **グローバル**（Teams 前面でも動く）— `pynput` ベース。macOS の **入力監視** + **アクセシビリティ** 権限をターミナルに付与する必要あり
+2. **TTY フォールバック**（meetdub のターミナルが前面の時だけ動くが、権限不要）— `/dev/tty` を cbreak モードで直接読む
 
 > ⚠ Mac の最上段はデフォルトでメディアキーなので、`fn + F2` で押すか、**システム設定 → キーボード → F1, F2 等のキーを標準のファンクションキーとして使用** を ON にしてください。
 
@@ -210,6 +218,7 @@ Teams / Zoom / Meet 側の設定:
 
 ```text
 meetdub install                      BlackHole 導入＋オーディオ設定ガイド
+meetdub setup                        対話ウィザード（言語・デバイス・パススルー）
 meetdub run [options]                翻訳開始
 meetdub auth openai | azure | login  認証情報設定
 meetdub auth show | clear | path     認証情報管理
@@ -227,10 +236,12 @@ meetdub --version
 | オプション | デフォルト | 説明 |
 | --- | --- | --- |
 | `--to / -t` | 設定ファイル | 翻訳先言語コード (en, ja, es, fr, de, zh, ko, pt, it, hi, ru, id, vi) |
-| `--input` | システム既定 | 入力デバイス名の部分一致 |
+| `--input` | MacBook 内蔵を自動選択。なければシステム既定 | 入力デバイス名の部分一致 |
 | `--output` | `BlackHole 2ch` | 出力デバイス名の部分一致 |
-| `--monitor` | なし | 翻訳音声を別デバイスにも流す（自分でモニタ用） |
+| `--monitor` | なし（config に値があればそれ） | 翻訳音声を別デバイスにも流す（自分でモニタ用） |
 | `--ptt` | off | Space 押下中のみ翻訳 |
+| `--passthrough` | off | 元音声を 15% で BlackHole にミックス（`+/-` で調整） |
+| `--passthrough-gain` | — | 線形ゲイン 0.0〜1.0 を明示指定（`--passthrough` を上書き） |
 | `--no-vad` | off | 音量に関わらず常時送信（精度↑コスト↑） |
 | `--no-transcript` | off | Markdown 議事録を保存しない |
 | `--azure` | off | Azure バックエンドを使用 |

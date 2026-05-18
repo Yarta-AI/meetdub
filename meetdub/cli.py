@@ -116,6 +116,22 @@ def run(
     no_transcript: Annotated[
         bool, typer.Option("--no-transcript", help="Don't save bilingual transcript")
     ] = False,
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            "--passthrough",
+            help="Mix attenuated original mic into BlackHole (defaults to 15%; adjust with +/- in TUI)",
+        ),
+    ] = False,
+    passthrough_gain: Annotated[
+        float | None,
+        typer.Option(
+            "--passthrough-gain",
+            help="Linear gain 0.0–1.0 for the original mic mix (overrides --passthrough)",
+            min=0.0,
+            max=1.0,
+        ),
+    ] = None,
     azure: Annotated[
         bool, typer.Option("--azure", help="Use Azure OpenAI instead of api.openai.com")
     ] = False,
@@ -151,6 +167,10 @@ def run(
     cfg.push_to_translate = push_to_translate
     cfg.vad_enabled = not no_vad
     cfg.save_transcripts = not no_transcript
+    if passthrough_gain is not None:
+        cfg.passthrough_gain = passthrough_gain
+    elif passthrough:
+        cfg.passthrough_gain = 0.15
 
     if azure or azure_endpoint or azure_deployment:
         cfg.backend = "azure"
@@ -188,6 +208,107 @@ def config() -> None:
     cfg = Config.load()
     console.print(f"[dim]path:[/] {CONFIG_PATH}")
     console.print(cfg)
+
+
+@app.command()
+def setup() -> None:
+    """Interactive wizard — pick language, devices, and passthrough once.
+
+    After this, `meetdub run` works without arguments. Re-run anytime to change
+    defaults; everything is saved to ~/.meetdub/config.yaml.
+    """
+    from meetdub.languages import LANGUAGES, resolve
+
+    cfg = Config.load()
+    console.print("[bold cyan]meetdub setup[/]  ·  saved to ~/.meetdub/config.yaml\n")
+
+    # --- Target language ---------------------------------------------------
+    console.print("[bold]1. Target language[/]")
+    for lang in LANGUAGES:
+        if not lang.hotkey:
+            continue
+        marker = "[green]→[/]" if lang.code == cfg.target_language else " "
+        console.print(f"   {marker} [cyan]{lang.code:<3}[/] {lang.name} ({lang.native})")
+    while True:
+        code = typer.prompt("   code", default=cfg.target_language).strip()
+        try:
+            cfg.target_language = resolve(code).code
+            break
+        except ValueError as e:
+            console.print(f"   [red]{e}[/]")
+
+    # --- Devices -----------------------------------------------------------
+    devices = audio.list_devices()
+    inputs = [d for d in devices if d.max_input_channels > 0]
+    outputs = [d for d in devices if d.max_output_channels > 0]
+
+    def _pick_device(
+        title: str, devs: list, current: str | None, recommend: str | None
+    ) -> str | None:
+        console.print(f"\n[bold]{title}[/]")
+        for i, d in enumerate(devs):
+            marker = "[green]→[/]" if current and current.lower() in d.name.lower() else " "
+            tag = (
+                " [yellow](recommended)[/]"
+                if recommend and recommend.lower() in d.name.lower()
+                else ""
+            )
+            console.print(f"   {marker} [cyan][{i}][/] {d.name}{tag}")
+        raw = typer.prompt("   number (or empty to keep current, '-' to clear)", default="").strip()
+        if not raw:
+            return current
+        if raw == "-":
+            return None
+        try:
+            return devs[int(raw)].name
+        except (ValueError, IndexError):
+            console.print("   [red]invalid choice — keeping current[/]")
+            return current
+
+    cfg.input_device = _pick_device("2. Input mic", inputs, cfg.input_device, "MacBook")
+    cfg.output_device = (
+        _pick_device(
+            "3. Output → meeting app (must be a virtual mic)",
+            outputs,
+            cfg.output_device,
+            "BlackHole",
+        )
+        or "BlackHole 2ch"
+    )
+    cfg.monitor_device = _pick_device(
+        "4. Monitor (where you hear yourself; empty = don't monitor)",
+        outputs,
+        cfg.monitor_device,
+        "AirPods" if any("airpods" in d.name.lower() for d in outputs) else None,
+    )
+
+    # --- Passthrough -------------------------------------------------------
+    console.print("\n[bold]5. Original-mic passthrough[/]")
+    console.print(
+        "   Mix your own voice into the virtual mic at low volume. Recommended\n"
+        "   when conversations mix the source and target language (so the other\n"
+        "   side keeps hearing you when no translation is generated)."
+    )
+    current_pct = int(cfg.passthrough_gain * 100)
+    raw = typer.prompt(
+        f"   percent 0-100 (current: {current_pct})", default=str(current_pct)
+    ).strip()
+    try:
+        pct = max(0, min(100, int(raw)))
+        cfg.passthrough_gain = pct / 100.0
+    except ValueError:
+        console.print("   [red]not a number — keeping current[/]")
+
+    cfg.save()
+    secrets_present = bool(
+        cfg.api_key() or (cfg.backend == "azure" and (cfg.azure_endpoint or cfg.azure_deployment))
+    )
+    console.print(f"\n[green]✓[/] saved to [dim]{CONFIG_PATH}[/]")
+    if not secrets_present:
+        console.print(
+            "   [yellow]next:[/] [bold]meetdub auth openai[/] (or [bold]meetdub auth azure[/])"
+        )
+    console.print("   then: [bold green]meetdub run[/]")
 
 
 @app.command("keys-test")

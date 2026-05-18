@@ -122,9 +122,15 @@ class Speaker:
             self._monitor.start()
 
     def write(self, pcm: bytes) -> None:
+        """Send translated audio to BlackHole and (optionally) the monitor."""
         self._primary.write(pcm)
         if self._monitor:
             self._monitor.write(pcm)
+
+    def write_primary(self, pcm: bytes) -> None:
+        """Send to BlackHole only (used for attenuated mic passthrough — we don't
+        want to also push the user's own raw voice back into their headphones)."""
+        self._primary.write(pcm)
 
     def close(self) -> None:
         self._primary.stop()
@@ -132,6 +138,20 @@ class Speaker:
         if self._monitor:
             self._monitor.stop()
             self._monitor.close()
+
+
+def attenuate_pcm16(pcm: bytes, gain: float) -> bytes:
+    """Scale int16 PCM samples by a linear gain (0.0 = silence, 1.0 = passthrough).
+
+    Clipping-safe via float32 intermediate.
+    """
+    if gain <= 0.0:
+        return b""
+    if gain >= 1.0:
+        return pcm
+    arr = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) * gain
+    np.clip(arr, -32768, 32767, out=arr)
+    return arr.astype(np.int16).tobytes()
 
 
 def rms_dbfs(pcm: bytes) -> float:

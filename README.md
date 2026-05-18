@@ -41,11 +41,15 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Yarta-AI/meetdub/main/install.sh | bash
 
-meetdub auth openai                                   # paste your sk-… (hidden input)
-meetdub run --to ja --output BlackHole --monitor AirPods --input MacBook
+meetdub auth openai          # paste your sk-… (hidden input)
+meetdub setup                # one-time wizard: language + devices + passthrough
+meetdub run                  # ▶ start translating
 ```
 
 In Teams / Zoom / Meet, set **microphone → BlackHole 2ch**. That's it.
+
+Day-to-day after that is just `meetdub run`, or `meetdub run --to en` to switch
+target language for one session.
 
 ## How it works
 
@@ -78,9 +82,10 @@ In Teams / Zoom / Meet, set **microphone → BlackHole 2ch**. That's it.
 
 * 🎭 **Voice preservation** — `gpt-realtime-translate` keeps your tone, pitch, and cadence. People hear *you*, just in another language.
 * 🪄 **Universal** — Teams · Zoom · Google Meet · Slack huddles · Discord · OBS · QuickTime · FaceTime. If it picks a mic, meetdub works.
-* ⚡ **One-command install** — Homebrew, BlackHole 2ch, pipx, and the audio walkthrough handled by `install.sh`.
+* ⚡ **One-command install + setup wizard** — `install.sh` handles BlackHole / pipx / brew; `meetdub setup` writes the rest. After that, you just run `meetdub run`.
 * 🌐 **11 output languages** — English, 日本語, Español, Français, Deutsch, 中文, 한국어, Português, Italiano, हिन्दी, Русский. Plus Indonesian and Vietnamese.
 * ⌨️ **Hot-swap mid-call** — tap F2–F12 to change target language without restarting.
+* 🎚️ **Live passthrough mix** — `+ / - / 0` adjusts how loud your original voice rides under the translation. Cookbook-recommended for mixed-language meetings (avoids silence when the other side speaks your target language).
 * 🔇 **Push-to-translate** — hold Space (with `--ptt`) so meetdub only listens while you're speaking. Perfect for multilingual calls where you want to hear the other side untranslated.
 * 💸 **Live cost meter** — your TUI shows actual API spend so you never get a surprise invoice.
 * 📝 **Bilingual transcripts** — every session auto-saves a Markdown transcript to `~/.meetdub/transcripts/`.
@@ -172,27 +177,25 @@ meetdub auth path                  # print file path
 
 ## Run
 
-```bash
-meetdub run --to ja                                     # translate to Japanese
-meetdub run --to es --ptt                               # Spanish, push-to-translate
-meetdub run --to fr --monitor "MacBook Pro Speakers"    # also hear it yourself
-meetdub run --to ja --azure                             # use Azure (after `meetdub auth azure`)
-```
-
-### Recommended setup for Teams / Zoom
+After `meetdub setup`, the everyday command is just:
 
 ```bash
-meetdub run --to en \
-  --input  "MacBook" \
-  --output "BlackHole" \
-  --monitor "AirPods"
+meetdub run
 ```
 
-| Flag | Effect |
-| --- | --- |
-| `--input "MacBook"` | Capture from the built-in mic. AirPods mic pickup is often too soft. |
-| `--output "BlackHole"` | Send translated audio to BlackHole 2ch — Teams reads this as its microphone. |
-| `--monitor "AirPods"` | Also play the translation to your AirPods so you hear yourself. |
+One-off overrides:
+
+```bash
+meetdub run --to en                  # switch target language for this session
+meetdub run --ptt                    # push-to-translate mode (hold Space)
+meetdub run --passthrough            # mix original mic in at 15% (adjust with +/-)
+meetdub run --azure                  # use Azure backend
+```
+
+If you skip `meetdub setup`, sane defaults apply:
+- **Output** → `BlackHole 2ch` (the virtual mic Teams/Zoom will pick up)
+- **Input** → auto-selects MacBook / Built-in mic when one is available (AirPods mic pickup is unreliable for translation)
+- **Monitor** → none (you won't hear the translation yourself — pass `--monitor "AirPods"` to fix)
 
 In Teams / Zoom / Meet:
 - **Microphone:** `BlackHole 2ch`
@@ -204,8 +207,14 @@ In Teams / Zoom / Meet:
 | Key | Action |
 | --- | --- |
 | `F2` `F3` `F4` `F5` `F6` `F7` `F8` `F9` `F10` `F11` `F12` | EN · JA · ES · FR · DE · ZH · KO · PT · IT · HI · RU |
+| `+` / `-` | passthrough volume ±5% |
+| `0` | mute passthrough |
 | `Space` (hold, with `--ptt`) | push-to-translate |
 | `Esc` | quit |
+
+Two paths handle these keys:
+1. **Global** (works while Teams is focused) — `pynput` listener. Needs macOS **Input Monitoring** + **Accessibility** permission for your terminal app.
+2. **TTY fallback** (works only when meetdub's terminal is focused, but needs no permissions) — direct `/dev/tty` read in cbreak mode.
 
 > ⚠ macOS reserves the F-key row for media controls by default. Either hold `fn` while pressing F2, or enable **System Settings → Keyboard → Use F1, F2, etc. keys as standard function keys**.
 
@@ -213,6 +222,7 @@ In Teams / Zoom / Meet:
 
 ```text
 meetdub install                      Install BlackHole + audio walkthrough
+meetdub setup                        Interactive wizard (language, devices, passthrough)
 meetdub run [options]                Start translating
 meetdub auth openai | azure | login  Save credentials
 meetdub auth show | clear | path     Manage credentials
@@ -230,10 +240,12 @@ meetdub --version
 | Option | Default | Notes |
 | --- | --- | --- |
 | `--to / -t` | from config | Target language code (en, ja, es, fr, de, zh, ko, pt, it, hi, ru, id, vi) |
-| `--input` | system default | Substring match on input device name |
+| `--input` | auto-detect MacBook mic, else system default | Substring match on input device name |
 | `--output` | `BlackHole 2ch` | Substring match on output device name |
-| `--monitor` | none | Also play translation to this output (for hearing yourself) |
+| `--monitor` | none (from config if set) | Also play translation here so you hear yourself |
 | `--ptt` | off | Translate only while Space is held |
+| `--passthrough` | off | Mix original mic at 15% into BlackHole (adjust with `+/-` in TUI) |
+| `--passthrough-gain` | — | Set explicit linear gain 0.0–1.0 (overrides `--passthrough`) |
 | `--no-vad` | off | Always send audio (more accurate, more cost) |
 | `--no-transcript` | off | Skip the Markdown transcript |
 | `--azure` | off | Use Azure backend |

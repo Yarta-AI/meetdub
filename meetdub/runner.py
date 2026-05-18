@@ -13,9 +13,10 @@ from meetdub import audio, secrets
 from meetdub.backend import from_env_or_config
 from meetdub.config import Config
 from meetdub.hotkeys import Hotkeys
-from meetdub.languages import resolve
+from meetdub.languages import BY_HOTKEY, resolve
 from meetdub.transcript import TranscriptWriter
 from meetdub.translator import RealtimeTranslator, TranslatorEvents
+from meetdub.tui_input import TtyKeys
 from meetdub.ui import CaptionsUI
 from meetdub.vad import VAD
 
@@ -54,10 +55,19 @@ class Session:
             )
             return 1
 
+        # Input: configured name if set, else prefer built-in mic over wireless
+        # (AirPods mic pickup is unreliable for translation accuracy).
         in_dev_idx: int | None = None
         if self.cfg.input_device:
             inf = audio.find_device(self.cfg.input_device, "input")
             in_dev_idx = inf.index if inf else None
+        else:
+            for hint in ("MacBook", "Built-in", "内蔵"):
+                inf = audio.find_device(hint, "input")
+                if inf:
+                    in_dev_idx = inf.index
+                    console.print(f"[dim]input auto-selected:[/] {inf.name}")
+                    break
 
         monitor_idx: int | None = None
         if self.cfg.monitor_device:
@@ -71,7 +81,7 @@ class Session:
         if self.cfg.save_transcripts:
             transcript = TranscriptWriter(self.target)
 
-        ui = CaptionsUI(self.target)
+        ui = CaptionsUI(self.target, ptt_enabled=self.cfg.push_to_translate)
         vad = VAD() if self.cfg.vad_enabled else None
         loop = asyncio.get_running_loop()
 
@@ -109,11 +119,43 @@ class Session:
                         self._ptt_active = active
                         ui.set_status("speaking…" if active else "muted (PTT)")
 
-                with Hotkeys(
-                    on_language=lang_change, on_quit=self._request_stop, on_push_to_translate=ptt
+                def volume(action: str) -> None:
+                    g = self.cfg.passthrough_gain
+                    if action == "VolUp":
+                        g = min(1.0, round(g + 0.05, 2))
+                    elif action == "VolDown":
+                        g = max(0.0, round(g - 0.05, 2))
+                    elif action == "VolMute":
+                        g = 0.0
+                    self.cfg.passthrough_gain = g
+                    ui.set_passthrough(g)
+
+                def tty_key(name: str) -> None:
+                    if name == "Esc":
+                        self._request_stop()
+                    elif name == "Space" and self.cfg.push_to_translate:
+                        # Raw TTY can't see press/release — toggle PTT instead.
+                        ptt(not self._ptt_active)
+                    elif name in ("VolUp", "VolDown", "VolMute"):
+                        volume(name)
+                    else:
+                        lang = BY_HOTKEY.get(name)
+                        if lang:
+                            lang_change(lang.code)
+
+                ui.set_passthrough(self.cfg.passthrough_gain)
+
+                with (
+                    Hotkeys(
+                        on_language=lang_change,
+                        on_quit=self._request_stop,
+                        on_push_to_translate=ptt,
+                        on_volume=volume,
+                    ),
+                    TtyKeys(tty_key),
                 ):
                     async with audio.MicCapture(in_dev_idx) as mic:
-                        await self._pump(mic, translator, vad, ui)
+                        await self._pump(mic, translator, vad, ui, speaker)
 
                 recv_task.cancel()
 
@@ -130,6 +172,7 @@ class Session:
         translator: RealtimeTranslator,
         vad: VAD | None,
         ui: CaptionsUI,
+        speaker: audio.Speaker,
     ) -> None:
         last_cost_update = 0.0
         while not self._stop.is_set():
@@ -139,6 +182,15 @@ class Session:
                 continue
             if not self._ptt_active:
                 continue
+
+            # Passthrough original mic into BlackHole at the configured gain.
+            # Runs unconditionally on speech AND silence so the other side
+            # always hears something (this is the cookbook's recommendation
+            # for same-language fallback).
+            gain = self.cfg.passthrough_gain
+            if gain > 0.0:
+                speaker.write_primary(audio.attenuate_pcm16(chunk, gain))
+
             if vad is not None and not vad.is_speech(chunk):
                 continue
             await translator.send_audio(chunk)

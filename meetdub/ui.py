@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from collections import deque
 
+from rich.console import Group
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
@@ -26,10 +27,12 @@ from meetdub.languages import BY_CODE, LANGUAGES
 
 
 class CaptionsUI:
-    def __init__(self, target_language: str) -> None:
+    def __init__(self, target_language: str, ptt_enabled: bool = False) -> None:
         self.target = target_language
         self._status = "connecting…"
         self._cost = 0.0
+        self._passthrough = 0.0
+        self._ptt_enabled = ptt_enabled
         self._t0 = time.monotonic()
         self._source_lines: deque[str] = deque(maxlen=6)
         self._target_lines: deque[str] = deque(maxlen=6)
@@ -58,6 +61,10 @@ class CaptionsUI:
         self._cost = usd
         self._refresh()
 
+    def set_passthrough(self, gain: float) -> None:
+        self._passthrough = gain
+        self._refresh()
+
     def push_source(self, text: str, done: bool) -> None:
         self._partial_source += text
         if done and self._partial_source.strip():
@@ -81,12 +88,16 @@ class CaptionsUI:
         mins, secs = divmod(elapsed, 60)
         lang = BY_CODE.get(self.target)
         target_label = f"{lang.native} ({lang.code})" if lang else self.target
+        pass_label = f"{int(self._passthrough * 100)}%" if self._passthrough > 0.0 else "off"
         return Text.assemble(
             ("● ", "bold green"),
             (self._status, "white"),
             ("  ·  ", "dim"),
             ("target: ", "dim"),
             (target_label, "bold cyan"),
+            ("  ·  ", "dim"),
+            ("passthrough: ", "dim"),
+            (pass_label, "bold magenta" if self._passthrough > 0 else "dim"),
             ("  ·  ", "dim"),
             ("cost: ", "dim"),
             (f"${self._cost:.4f}", "bold yellow"),
@@ -103,24 +114,32 @@ class CaptionsUI:
         return Panel(body, title=title, border_style=color, padding=(0, 1))
 
     def _hotkeys(self) -> Panel:
-        body = Text()
+        langs = Text(overflow="ellipsis", no_wrap=True)
         for lang in LANGUAGES:
             if not lang.hotkey:
                 continue
-            body.append(f" {lang.hotkey} ", style="reverse cyan")
-            body.append(f"{lang.code.upper()} ", style="white")
-        body.append("  Space ", style="reverse magenta")
-        body.append("push-to-translate  ", style="white")
-        body.append(" Esc ", style="reverse red")
-        body.append("quit", style="white")
-        return Panel(body, border_style="dim")
+            langs.append(f" {lang.hotkey} ", style="reverse cyan")
+            langs.append(f"{lang.code.upper()} ", style="white")
+
+        actions = Text(overflow="ellipsis", no_wrap=True)
+        actions.append(" +/- ", style="reverse yellow")
+        actions.append("passthrough  ", style="white")
+        actions.append(" 0 ", style="reverse yellow")
+        actions.append("mute  ", style="white")
+        if self._ptt_enabled:
+            actions.append(" Space ", style="reverse magenta")
+            actions.append("PTT  ", style="white")
+        actions.append(" Esc ", style="reverse red")
+        actions.append("quit", style="white")
+
+        return Panel(Group(langs, actions), border_style="dim")
 
     def _render(self) -> Layout:
         layout = Layout()
         layout.split_column(
             Layout(Panel(self._status_line(), border_style="green"), size=3),
             Layout(name="captions", ratio=1),
-            Layout(self._hotkeys(), size=3),
+            Layout(self._hotkeys(), size=4),
         )
         layout["captions"].split_column(
             Layout(self._captions(self._source_lines, self._partial_source, "source", "white")),

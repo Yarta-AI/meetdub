@@ -24,6 +24,12 @@ class Config:
     save_transcripts: bool = True
     noise_reduction: str = "near_field"
 
+    # Linear gain (0.0–1.0) for mixing the original mic into the BlackHole
+    # output alongside translated audio. The cookbook recommends NOT fully
+    # muting the original — when the other side speaks your target language
+    # the model emits silence, and the passthrough fills the gap.
+    passthrough_gain: float = 0.0
+
     # Backend selection: "openai" (default) or "azure"
     backend: str = "openai"
 

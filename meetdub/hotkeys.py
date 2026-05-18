@@ -2,6 +2,8 @@
 
 F2–F12: hot-swap target language
 Space (hold): push-to-translate (only while held)
++ / -:  raise / lower passthrough gain (original mic mix into BlackHole)
+0:      mute passthrough
 Esc:    quit
 
 pynput needs Accessibility permission on macOS. We surface that in `doctor`.
@@ -23,10 +25,12 @@ class Hotkeys:
         on_language: Callable[[str], None],
         on_quit: Callable[[], None],
         on_push_to_translate: Callable[[bool], None] | None = None,
+        on_volume: Callable[[str], None] | None = None,
     ) -> None:
         self._on_language = on_language
         self._on_quit = on_quit
         self._on_ptt = on_push_to_translate
+        self._on_volume = on_volume
         self._listener: keyboard.Listener | None = None
         self._space_down = False
         self._stop = threading.Event()
@@ -48,6 +52,15 @@ class Hotkeys:
         if key == keyboard.Key.space and self._on_ptt and not self._space_down:
             self._space_down = True
             self._on_ptt(True)
+            return
+        if self._on_volume and hasattr(key, "char") and key.char:
+            ch = key.char
+            if ch in ("+", "="):
+                self._on_volume("VolUp")
+            elif ch == "-":
+                self._on_volume("VolDown")
+            elif ch == "0":
+                self._on_volume("VolMute")
 
     def _release(self, key) -> None:
         if key == keyboard.Key.space and self._on_ptt and self._space_down:
