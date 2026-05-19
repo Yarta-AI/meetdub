@@ -1,16 +1,20 @@
 # meetdub 0.1.0 — first public release 🎙️
 
-**Speak any language with your own voice — in any meeting.**
+**Speak any language. Stay sounding like you.**
+
+https://github.com/user-attachments/assets/969b3ede-e13a-49e4-b07b-ef125f651452
 
 meetdub sits between your mic and Teams/Zoom/Meet/Discord/OBS, pipes your
 voice through OpenAI's `gpt-realtime-translate`, and routes the translated
-audio — preserving your tone and cadence — into a virtual mic the meeting
+audio — adapted to your tone and pacing — into a virtual mic the meeting
 app reads as its input.
 
 ## ✨ Highlights
 
-- **Voice preservation.** Dynamic voice adaptation keeps your tone, pitch,
-  and pacing. People hear *you*, just in another language.
+- **Speaker-adaptive voice.** The model uses *dynamic voice adaptation* —
+  the translated speech follows your general tone, pitch, and pacing.
+  It is **not** a voice clone; listeners hear a model voice that
+  approximates how you sound rather than a pixel-perfect copy.
 - **Universal.** Teams, Zoom, Meet, Discord, OBS, QuickTime, FaceTime — if
   it can pick a mic, meetdub works.
 - **One command to install.** `curl … install.sh | bash` handles Homebrew,
@@ -19,7 +23,7 @@ app reads as its input.
 - **Two backends.** OpenAI direct or Azure OpenAI — including api-key,
   static Entra Bearer, and an in-app browser login (`meetdub auth login`)
   for resources locked to Entra ID.
-- **11 output languages.** Hot-swap mid-call with F2–F12.
+- **13 output languages** (English, 日本語, Español, Français, Deutsch, 中文, 한국어, Português, Italiano, हिन्दी, Русский, Bahasa Indonesia, Tiếng Việt). Hot-swap mid-call with `F2`–`F12` for the first eleven.
 - **Cookbook-honest passthrough mix.** Original mic at adjustable gain so
   the other side keeps hearing you when the model emits same-language
   silence. `+ / - / 0` to dial it live.

@@ -2,9 +2,9 @@
 
 # 🎙️ meetdub
 
-### あなたの声のまま、どの言語でも、どの会議でも。
+### どの言語でも、あなたらしい話し方のまま。
 
-**マイクと Teams/Zoom/Meet の間に挟まる、リアルタイム音声翻訳ツール。**
+**あなたのトーンと話速を踏襲するリアルタイム会議翻訳。マイクと Teams / Zoom / Meet の間に挟まる構成。**
 
 [![CI](https://github.com/Yarta-AI/meetdub/actions/workflows/ci.yml/badge.svg)](https://github.com/Yarta-AI/meetdub/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/meetdub?color=blue)](https://pypi.org/project/meetdub/)
@@ -20,18 +20,24 @@
 
 ---
 
-> **📹 デモ GIF はここに** — `docs/demo.gif`（Teams 通話を日本語↔英語にリアルタイム翻訳しているところ）
+<div align="center">
+
+https://github.com/user-attachments/assets/969b3ede-e13a-49e4-b07b-ef125f651452
+
+<sub><em>24 秒のデモ · ▶ クリックで音声付き再生 · 同じ話者・別の言語</em></sub>
+
+</div>
 
 ## なぜ meetdub？
 
-|                            | meetdub | Teams ライブ翻訳 | Krisp 等 | Heygen 等<br>(アバター吹替) |
-| -------------------------- | :-----: | :--------------: | :------: | :------------------------: |
-| **どの会議アプリでも動く** |    ✅    |   ❌ Teams のみ   |     ✅    |             ❌              |
-| **自分の声のまま**         |    ✅    |   ❌ 合成音/字幕  |    N/A   |             ✅              |
-| 自分の API キーを使える    |    ✅    |         ❌        |     ❌    |             ❌              |
-| オープンソース             |    ✅    |         ❌        |     ❌    |             ❌              |
-| 料金                       | 〜$2/時 |   席ライセンス    |   月額    |            月額             |
-| 自前ホスティング可         |    ✅    |         ❌        |     ❌    |             ❌              |
+|                                       | meetdub                            | Teams ライブ翻訳   | Krisp 等 | Heygen 等<br>(アバター吹替) |
+| ------------------------------------- | :--------------------------------: | :----------------: | :------: | :------------------------: |
+| **どの会議アプリでも動く**            | ✅                                  | ❌ Teams のみ       | ✅        | ❌                          |
+| 話者のトーン・話速に追従する          | ✅ adaptation                       | ❌ 字幕のみ         | N/A      | ✅ フル音声クローン         |
+| 自分の API キーを使える               | ✅                                  | ❌                  | ❌        | ❌                          |
+| オープンソース                        | ✅                                  | ❌                  | ❌        | ❌                          |
+| 料金                                  | **$0.034 / 音声分**                | 席ライセンス        | 月額      | 月額                        |
+| 自前ホスティング可                    | ✅                                  | ❌                  | ❌        | ❌                          |
 
 ## クイックスタート
 
@@ -55,7 +61,7 @@ Teams / Zoom / Meet で **マイク → BlackHole 2ch** を選ぶだけ。
        │             └───────────────┘                   └──────────────────────┘
        │                                                            │
        │                                                            │ 翻訳音声
-       │                                                            │ (あなたの声色のまま、訳語で)
+       │                                                            │ (あなたのトーン・話速に追従、訳語で)
        │                                                            ▼
        │                                                  ┌───────────────────┐
        │                                                  │   BlackHole 2ch   │ ──▶ Teams が拾う
@@ -76,14 +82,14 @@ Teams / Zoom / Meet で **マイク → BlackHole 2ch** を選ぶだけ。
 
 ## 機能
 
-* 🎭 **声色保持** — `gpt-realtime-translate` がトーン・ピッチ・話速をそのまま訳語に転写。相手には **あなたの声で別言語が届く**
+* 🎭 **話者適応ボイス** — `gpt-realtime-translate` は dynamic voice adaptation を使い、訳語音声があなたの**トーン・ピッチ・話速に追従**します。声色クローンではなく、あなたに**近い話し方のモデル音声**が出力されます（完全な「あなたの声」ではありません）
 * 🪄 **どこでも動く** — Teams · Zoom · Google Meet · Slack ハドル · Discord · OBS · QuickTime · FaceTime。マイク選択できるアプリなら全て対応
 * ⚡ **ワンコマンド導入 + setup ウィザード** — `install.sh` が BlackHole / pipx / brew をまとめて入れる。残りは `meetdub setup` 一回で書き込み、以降は `meetdub run` だけ
-* 🌐 **11 言語出力** — English · 日本語 · Español · Français · Deutsch · 中文 · 한국어 · Português · Italiano · हिन्दी · Русский（+ Indonesian / Vietnamese）
+* 🌐 **13 言語出力** — English · 日本語 · Español · Français · Deutsch · 中文 · 한국어 · Português · Italiano · हिन्दी · Русский · Bahasa Indonesia · Tiếng Việt（最初の 11 は `F2`〜`F12` ホットキー対応）
 * ⌨️ **会議中に言語ホットスワップ** — F2-F12 で再起動なしに翻訳先言語を切替
 * 🎚️ **パススルー音量ライブ調整** — `+ / - / 0` で元音声のミックス量を調整。多言語会議で相手が自分の母語で話す時の無音回避（cookbook 推奨）
 * 🔇 **Push-to-translate** — `--ptt` モードで Space 押下中のみ翻訳。多言語ミーティングで相手の話す番は翻訳しないユースケース向け
-* 💸 **コストメーター** — TUI に API 使用料がリアルタイム表示。請求の不意打ちなし
+* 💸 **コスト概算メーター** — 「送信した音声分 × OpenAI 公表レート ($0.034/分)」を TUI 上に表示。請求書ではなく目安として使う想定
 * 📝 **バイリンガル議事録** — セッション毎に `~/.meetdub/transcripts/` へ Markdown 自動保存
 * 🔐 **ローカル鍵管理** — 認証情報は `~/.meetdub/secrets.env` (chmod 600) に保存。シェル rc を汚さない
 * ☁️ **2 バックエンド** — OpenAI 直 / Azure OpenAI（API キー or Microsoft Entra ID）
@@ -270,7 +276,6 @@ meetdub --version
 
 ## ロードマップ
 
-- [ ] README のデモ GIF
 - [ ] Homebrew tap (`brew install Yarta-AI/meetdub/meetdub`)
 - [ ] Linux 対応 (PulseAudio / PipeWire null-sink)
 - [ ] Windows 対応 (VB-CABLE)

@@ -2,9 +2,9 @@
 
 # 🎙️ meetdub
 
-### Speak any language with your own voice — in any meeting.
+### Speak any language. Stay sounding like you.
 
-**Real-time speech-to-speech translation that lives between your mic and Teams/Zoom/Meet.**
+**Real-time meeting translation that follows your tone and pacing — sits between your mic and Teams/Zoom/Meet.**
 
 [![CI](https://github.com/Yarta-AI/meetdub/actions/workflows/ci.yml/badge.svg)](https://github.com/Yarta-AI/meetdub/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/meetdub?color=blue)](https://pypi.org/project/meetdub/)
@@ -20,21 +20,24 @@
 
 ---
 
-<!-- HERO: replace with a real demo GIF before launching. ffmpeg one-liner:
-     ffmpeg -i demo.mov -vf "fps=15,scale=900:-1" -loop 0 docs/demo.gif -->
+<div align="center">
 
-> **📹 Demo GIF goes here** — `docs/demo.gif` (Teams call with live JA→EN translation in the meetdub TUI)
+https://github.com/user-attachments/assets/969b3ede-e13a-49e4-b07b-ef125f651452
+
+<sub><em>24-second demo · click ▶ to play with audio · same speaker, different language</em></sub>
+
+</div>
 
 ## Why meetdub?
 
-|                         | meetdub | Microsoft Teams<br>Live Translation | Krisp / Noise tools | Heygen<br>(avatar dubbing) |
-| ----------------------- | :-----: | :---------------------------------: | :-----------------: | :------------------------: |
-| Works in **any** app    |    ✅    |             ❌ Teams only            |          ✅          |             ❌              |
-| **Your own voice**      |    ✅    |    ❌ Synth voice / text captions    |         N/A         |             ✅              |
-| Bring your own key      |    ✅    |                  ❌                  |          ❌          |             ❌              |
-| Open source             |    ✅    |                  ❌                  |          ❌          |             ❌              |
-| Cost                    | ~$2/hr  |          Per-seat license           |     Subscription    |        Subscription        |
-| Self-hostable           |    ✅    |                  ❌                  |          ❌          |             ❌              |
+|                              | meetdub                          | Microsoft Teams<br>Live Translation | Krisp / Noise tools | Heygen<br>(avatar dubbing) |
+| ---------------------------- | :------------------------------: | :---------------------------------: | :-----------------: | :------------------------: |
+| Works in **any** app         | ✅                                | ❌ Teams only                        | ✅                   | ❌                          |
+| Voice follows the speaker    | ✅ adaptation (tone & pacing)    | ❌ text captions only                | N/A                 | ✅ full clone               |
+| Bring your own key           | ✅                                | ❌                                   | ❌                   | ❌                          |
+| Open source                  | ✅                                | ❌                                   | ❌                   | ❌                          |
+| Cost                         | **$0.034 / audio-minute**        | Per-seat license                    | Subscription        | Subscription               |
+| Self-hostable                | ✅                                | ❌                                   | ❌                   | ❌                          |
 
 ## Quick start
 
@@ -59,7 +62,7 @@ target language for one session.
        │             └───────────────┘                   └──────────────────────┘
        │                                                            │
        │                                                            │ translated audio
-       │                                                            │ (your voice, target language)
+       │                                                            │ (model voice, follows your tone)
        │                                                            ▼
        │                                                  ┌───────────────────┐
        │                                                  │   BlackHole 2ch   │ ──▶ Teams hears it
@@ -80,14 +83,14 @@ target language for one session.
 
 ## Features
 
-* 🎭 **Voice preservation** — `gpt-realtime-translate` keeps your tone, pitch, and cadence. People hear *you*, just in another language.
+* 🎭 **Speaker-adaptive voice** — `gpt-realtime-translate` uses dynamic voice adaptation, so the translation **follows your tone, pitch, and pacing**. It's not a voice clone — listeners hear a model voice that approximates how *you* sound, not a perfect copy.
 * 🪄 **Universal** — Teams · Zoom · Google Meet · Slack huddles · Discord · OBS · QuickTime · FaceTime. If it picks a mic, meetdub works.
 * ⚡ **One-command install + setup wizard** — `install.sh` handles BlackHole / pipx / brew; `meetdub setup` writes the rest. After that, you just run `meetdub run`.
-* 🌐 **11 output languages** — English, 日本語, Español, Français, Deutsch, 中文, 한국어, Português, Italiano, हिन्दी, Русский. Plus Indonesian and Vietnamese.
+* 🌐 **13 output languages** — English, 日本語, Español, Français, Deutsch, 中文, 한국어, Português, Italiano, हिन्दी, Русский, Bahasa Indonesia, Tiếng Việt. The first 11 are bound to `F2`–`F12`.
 * ⌨️ **Hot-swap mid-call** — tap F2–F12 to change target language without restarting.
 * 🎚️ **Live passthrough mix** — `+ / - / 0` adjusts how loud your original voice rides under the translation. Cookbook-recommended for mixed-language meetings (avoids silence when the other side speaks your target language).
 * 🔇 **Push-to-translate** — hold Space (with `--ptt`) so meetdub only listens while you're speaking. Perfect for multilingual calls where you want to hear the other side untranslated.
-* 💸 **Live cost meter** — your TUI shows actual API spend so you never get a surprise invoice.
+* 💸 **Live cost estimate** — TUI tracks audio minutes × OpenAI's published rate ($0.034 / minute). Treat it as a useful indicator, not an invoice.
 * 📝 **Bilingual transcripts** — every session auto-saves a Markdown transcript to `~/.meetdub/transcripts/`.
 * 🔐 **Local secrets** — credentials in `~/.meetdub/secrets.env` (chmod 600), never in shell rc.
 * ☁️ **Two backends** — OpenAI direct or Azure OpenAI (api-key or Microsoft Entra ID).
@@ -274,7 +277,6 @@ Run **`meetdub doctor`** first — it checks Homebrew, BlackHole, secrets, and A
 
 ## Roadmap
 
-- [ ] Demo GIF in this README
 - [ ] Homebrew tap (`brew install Yarta-AI/meetdub/meetdub`)
 - [ ] Linux support (PulseAudio / PipeWire null-sink)
 - [ ] Windows support (VB-CABLE)
