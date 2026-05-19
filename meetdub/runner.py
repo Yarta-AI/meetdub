@@ -74,7 +74,10 @@ class Session:
             mon = audio.find_device(self.cfg.monitor_device, "output")
             monitor_idx = mon.index if mon else None
 
-        speaker = audio.Speaker(out_dev.index, monitor_idx)
+        latency: float | str = (
+            "low" if self.cfg.output_latency_ms <= 0 else self.cfg.output_latency_ms / 1000.0
+        )
+        speaker = audio.Speaker(out_dev.index, monitor_idx, latency=latency)
         speaker.start()
 
         transcript: TranscriptWriter | None = None

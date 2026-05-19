@@ -132,6 +132,15 @@ def run(
             max=1.0,
         ),
     ] = None,
+    latency_ms: Annotated[
+        int | None,
+        typer.Option(
+            "--latency-ms",
+            help="Output buffer in ms. 0 = device minimum (real-time, may stutter). Bump if you hear choppy audio.",
+            min=0,
+            max=500,
+        ),
+    ] = None,
     azure: Annotated[
         bool, typer.Option("--azure", help="Use Azure OpenAI instead of api.openai.com")
     ] = False,
@@ -171,6 +180,8 @@ def run(
         cfg.passthrough_gain = passthrough_gain
     elif passthrough:
         cfg.passthrough_gain = 0.15
+    if latency_ms is not None:
+        cfg.output_latency_ms = latency_ms
 
     if azure or azure_endpoint or azure_deployment:
         cfg.backend = "azure"

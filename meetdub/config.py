@@ -30,6 +30,11 @@ class Config:
     # the model emits silence, and the passthrough fills the gap.
     passthrough_gain: float = 0.0
 
+    # Output device latency. 0 = "low" (device minimum, closest to real-time
+    # but may stutter under jitter). Otherwise milliseconds — higher = smoother
+    # playback at the cost of perceived lag.
+    output_latency_ms: int = 0
+
     # Backend selection: "openai" (default) or "azure"
     backend: str = "openai"
 

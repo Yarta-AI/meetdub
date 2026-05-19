@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    # vX.Y.Z → real PyPI + GitHub Release.
+    # vX.Y.Z-rcN (or anything containing "-") → TestPyPI only.
     tags: ["v*"]
 
 permissions:
@@ -23,7 +25,8 @@ jobs:
           name: dist
           path: dist/*
 
-  publish-pypi:
+  publish-testpypi:
+    if: contains(github.ref_name, '-')
     needs: build
     runs-on: ubuntu-latest
     environment: release
@@ -34,12 +37,26 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # Requires Trusted Publishing configured on PyPI for this project.
-          # Falls back to PYPI_API_TOKEN if you prefer secret-based auth.
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  publish-pypi:
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
           skip-existing: true
 
   github-release:
-    needs: build
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: publish-pypi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

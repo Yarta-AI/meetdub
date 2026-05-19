@@ -89,37 +89,98 @@ class MicCapture:
             self._stream.close()
 
 
-class Speaker:
-    """Plays PCM16 chunks straight to output devices.
+class _AudioSink:
+    """One sounddevice output stream fed by a background writer thread.
 
-    Matches the OpenAI Realtime cookbook pattern: receive `output_audio.delta`,
-    decode base64, write to a sounddevice output stream. No custom buffering.
+    Why a thread: sd.RawOutputStream.write() blocks until the device buffer
+    has space. Calling it from the asyncio loop (where the WS receive task
+    lives) stalls every other coroutine, so audio events pile up and arrive
+    in bursts — the classic "ぷつぷつ" symptom. We push chunks to a queue
+    and let a dedicated thread drain them; asyncio never waits on audio I/O.
+
+    The queue is bounded (~1 s) so a stuck device doesn't grow memory; on
+    overflow we drop the oldest chunk, since lagging by more than a second
+    is already worse than a dropout.
     """
+
+    QUEUE_MAX = 50  # ~10s of 200ms chunks; we never approach this in healthy state
+
+    def __init__(self, device: int | str, latency: float | str = "low") -> None:
+        """latency: 'low' (device minimum, ~10-20ms on macOS — closest to real-time),
+        'high' (smoothest, ~150-200ms), or an explicit seconds value.
+
+        The cookbook doesn't address this trade-off; we default to 'low' because
+        translation already adds 1-2s of inherent latency, and any playback
+        latency stacks on top. If you hear stutter, bump via --latency-ms."""
+        import queue
+        import threading
+
+        self._stream = sd.RawOutputStream(
+            samplerate=SAMPLE_RATE,
+            device=device,
+            channels=1,
+            dtype=DTYPE,
+            latency=latency,
+        )
+        self._stream.start()
+        self._q: queue.Queue[bytes] = queue.Queue(maxsize=self.QUEUE_MAX)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+
+    def write(self, pcm: bytes) -> None:
+        import queue
+
+        try:
+            self._q.put_nowait(pcm)
+        except queue.Full:
+            # Drop oldest to keep latency bounded.
+            with contextlib.suppress(queue.Empty):
+                self._q.get_nowait()
+            with contextlib.suppress(queue.Full):
+                self._q.put_nowait(pcm)
+
+    def _drain(self) -> None:
+        import queue
+
+        while not self._stop.is_set():
+            try:
+                pcm = self._q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                self._stream.write(pcm)
+            except Exception:
+                # Device may be torn down during shutdown; bail quietly.
+                return
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1)
+        try:
+            self._stream.stop()
+            self._stream.close()
+        except Exception:
+            pass
+
+
+class Speaker:
+    """Plays PCM16 chunks to one or two output devices without blocking the
+    asyncio loop. Receive `output_audio.delta`, decode base64, hand off here."""
 
     def __init__(
         self,
         primary_device: int | str,
         monitor_device: int | str | None = None,
+        latency: float | str = "low",
     ) -> None:
-        self._primary = sd.RawOutputStream(
-            samplerate=SAMPLE_RATE,
-            device=primary_device,
-            channels=1,
-            dtype=DTYPE,
+        self._primary = _AudioSink(primary_device, latency=latency)
+        self._monitor: _AudioSink | None = (
+            _AudioSink(monitor_device, latency=latency) if monitor_device is not None else None
         )
-        self._monitor: sd.RawOutputStream | None = None
-        if monitor_device is not None:
-            self._monitor = sd.RawOutputStream(
-                samplerate=SAMPLE_RATE,
-                device=monitor_device,
-                channels=1,
-                dtype=DTYPE,
-            )
 
     def start(self) -> None:
-        self._primary.start()
-        if self._monitor:
-            self._monitor.start()
+        pass  # sinks start their own streams + threads in __init__
 
     def write(self, pcm: bytes) -> None:
         """Send translated audio to BlackHole and (optionally) the monitor."""
@@ -128,15 +189,13 @@ class Speaker:
             self._monitor.write(pcm)
 
     def write_primary(self, pcm: bytes) -> None:
-        """Send to BlackHole only (used for attenuated mic passthrough — we don't
-        want to also push the user's own raw voice back into their headphones)."""
+        """Send to BlackHole only — used for attenuated mic passthrough so we
+        don't double the user's own voice in their headphones."""
         self._primary.write(pcm)
 
     def close(self) -> None:
-        self._primary.stop()
         self._primary.close()
         if self._monitor:
-            self._monitor.stop()
             self._monitor.close()
 
 
