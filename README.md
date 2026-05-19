@@ -253,6 +253,7 @@ meetdub --version
 | `--azure-deployment` | from auth | Deployment name |
 | `--azure-api-version` | GA | Set for preview API (deprecated 2026-04-30) |
 | `--azure-path` | `/openai/v1/realtime/translations` | Override if your region 404s |
+| `--latency-ms` | `0` (device minimum) | Output buffer in milliseconds. Bump to 30–100 if you hear stutter; 0 is closest to real-time. |
 | `--debug` | off | Verbose log to `~/.meetdub/debug.log` |
 
 ## Troubleshooting
@@ -268,20 +269,24 @@ Run **`meetdub doctor`** first — it checks Homebrew, BlackHole, secrets, and A
 | Translation runs but Teams stays silent | Set Teams microphone to BlackHole 2ch. Also: noise suppression → **Low** or **Off**. |
 | Teams sounds robotic / chopped | Teams' noise suppression is filtering meetdub's output. Set it to **Off**. |
 | `Endpoint configured for Microsoft Entra ID authentication, key is not needed` | Your Azure resource disabled api-key auth. Run `meetdub auth login` for browser login. |
-| Audio is choppy / "ぷつぷつ" | Check your monitor device — Bluetooth headphones (AirPods) add 150-300ms latency. Try a wired output. |
+| Audio is choppy / "ぷつぷつ" | Bump the output buffer: `meetdub run --latency-ms 50` (or 100). Bluetooth monitors like AirPods compound the issue — try a wired output for comparison. |
 | Persistent transcription errors mid-call | Speak in complete sentences (3+ seconds). Very short utterances or whispers fail to transcribe. Try `--no-vad`. |
 
 ## Roadmap
 
-- [ ] Demo GIF
-- [ ] PyPI publish
+- [ ] Demo GIF in this README
 - [ ] Homebrew tap (`brew install Yarta-AI/meetdub/meetdub`)
 - [ ] Linux support (PulseAudio / PipeWire null-sink)
 - [ ] Windows support (VB-CABLE)
 - [ ] Two-way mode — pipe the other side's audio through translation back to your headphones
 - [ ] Glossary plugin hooks — rewrite jargon / product names before TTS
-- [ ] Local model backend — `whisper.cpp` + open TTS for offline / privacy mode
-- [ ] Keychain storage backend (macOS) as alternative to `secrets.env`
+- [ ] Local-model backend — `whisper.cpp` + open TTS for offline / privacy mode
+- [ ] macOS Keychain storage backend as alternative to `secrets.env`
+- [ ] Web version using the WebRTC `/realtime/translations/calls` endpoint (reaches mobile browsers)
+
+> 🛑 **Not planned**: native iOS / Android apps that inject into other apps' microphones.
+> The platform sandbox forbids virtual audio drivers, so meetdub's BlackHole-style approach
+> won't translate. The Web version above is the practical path for mobile users.
 
 ## Contributing
 

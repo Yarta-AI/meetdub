@@ -64,8 +64,20 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Pick release notes (per-version file if present, else auto-generate)
+        id: notes
+        run: |
+          NOTES=".github/RELEASE_NOTES_${{ github.ref_name }}.md"
+          if [[ -f "$NOTES" ]]; then
+            echo "body_path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "generate=false"   >> "$GITHUB_OUTPUT"
+          else
+            echo "body_path="       >> "$GITHUB_OUTPUT"
+            echo "generate=true"    >> "$GITHUB_OUTPUT"
+          fi
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.body_path }}
+          generate_release_notes: ${{ steps.notes.outputs.generate == 'true' }}
           files: dist/*

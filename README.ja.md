@@ -249,6 +249,7 @@ meetdub --version
 | `--azure-deployment` | auth から | デプロイメント名 |
 | `--azure-api-version` | GA | preview API 利用時のみ（2026-04-30 廃止予定） |
 | `--azure-path` | `/openai/v1/realtime/translations` | リージョン依存で 404 出る時の上書き用 |
+| `--latency-ms` | `0` (デバイス最小) | 出力バッファ ms。ぷつぷつしたら 30〜100 に上げる。0 が最もリアルタイム |
 | `--debug` | off | 詳細ログを `~/.meetdub/debug.log` に出力 |
 
 ## トラブルシューティング
@@ -264,13 +265,12 @@ meetdub --version
 | 翻訳は動いてるのに Teams が無音 | Teams のマイクが BlackHole 2ch になっているか確認。ノイズ抑制を **低 or オフ** に |
 | Teams から機械的・途切れる音 | Teams のノイズ抑制が合成音声をフィルタしてる。**オフ** にする |
 | `エンドポイントが Microsoft Entra ID 認証で構成されているため、キーは必要ありません` | Azure リソースが API キー認証を無効化している。`meetdub auth login` でブラウザログイン |
-| 音声がぷつぷつ | モニタデバイスを確認。AirPods 等の Bluetooth は 150-300ms 遅延がある。有線出力で試す |
+| 音声がぷつぷつ | バッファを増やす: `meetdub run --latency-ms 50`（または 100）。AirPods 等 Bluetooth モニタは状況を悪化させるので、有線出力との比較も推奨 |
 | 通話中に転写エラーが頻発 | 文単位で続けて話す（3 秒以上）。短い発話・小声は転写が失敗しやすい。`--no-vad` も試す |
 
 ## ロードマップ
 
-- [ ] デモ GIF
-- [ ] PyPI 公開
+- [ ] README のデモ GIF
 - [ ] Homebrew tap (`brew install Yarta-AI/meetdub/meetdub`)
 - [ ] Linux 対応 (PulseAudio / PipeWire null-sink)
 - [ ] Windows 対応 (VB-CABLE)
@@ -278,6 +278,11 @@ meetdub --version
 - [ ] 用語集プラグイン — 専門用語・固有名詞を TTS 前に書き換え
 - [ ] ローカルモデルバックエンド — `whisper.cpp` + OSS TTS でオフライン/プライバシーモード
 - [ ] macOS Keychain ストレージ（`secrets.env` の代替）
+- [ ] Web 版 — WebRTC `/realtime/translations/calls` 経由でモバイルブラウザも対応
+
+> 🛑 **対応予定なし**: iOS / Android のネイティブアプリ（他アプリのマイクに翻訳音声を流すタイプ）。
+> プラットフォームの sandbox が仮想オーディオドライバを禁止しているため、meetdub の BlackHole 方式は
+> 適用不可。モバイル向けは上記 Web 版が現実解です。
 
 ## コントリビュート
 
