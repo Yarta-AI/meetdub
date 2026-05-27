@@ -25,8 +25,6 @@ import websockets
 
 from meetdub.backend import Backend
 
-TRANSCRIBE_MODEL = "gpt-realtime-whisper"
-
 # May 2026 pricing — keep in sync with https://openai.com/api/pricing/
 USD_PER_MINUTE = 0.034
 
@@ -89,10 +87,6 @@ class RealtimeTranslator:
             "type": "session.update",
             "session": {
                 "audio": {
-                    "input": {
-                        "transcription": {"model": TRANSCRIBE_MODEL},
-                        "noise_reduction": {"type": self._noise_reduction},
-                    },
                     "output": {"language": target_language},
                 },
             },

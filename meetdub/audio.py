@@ -194,10 +194,10 @@ class _VirtualMicSink:
     stay close to real time.
     """
 
-    JITTER_MS = 100
-    IDLE_RESET_MS = 300
-    FADE_MS = 3
-    OUTPUT_GAIN = 0.8
+    JITTER_MS = 10
+    IDLE_RESET_MS = 100
+    FADE_MS = 5
+    OUTPUT_GAIN = 0.2
 
     def __init__(
         self,

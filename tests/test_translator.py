@@ -132,3 +132,24 @@ def test_switch_language_clears_input_audio_buffer_before_session_update():
         "session.update",
     ]
     assert ws.sent[1]["session"]["audio"]["output"]["language"] == "en"
+
+
+def test_session_update_matches_translation_websocket_shape():
+    input_events: list[tuple[str, bool]] = []
+    output_events: list[tuple[str, bool]] = []
+    translator = _translator(input_events, output_events)
+    ws = _FakeWebSocket()
+    translator._ws = ws
+
+    asyncio.run(translator._configure_session("es"))
+
+    assert ws.sent == [
+        {
+            "type": "session.update",
+            "session": {
+                "audio": {
+                    "output": {"language": "es"},
+                },
+            },
+        }
+    ]
