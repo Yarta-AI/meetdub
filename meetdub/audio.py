@@ -193,6 +193,7 @@ class _VirtualMicSink:
 
     JITTER_MS = 100
     IDLE_RESET_MS = 300
+    FADE_MS = 3
 
     def __init__(self, device: int | str, latency: float | str = "low") -> None:
         import threading
@@ -200,11 +201,13 @@ class _VirtualMicSink:
         self._device_rate = _device_rate(device)
         self._jitter_bytes = int(self._device_rate * 2 * self.JITTER_MS / 1000)
         self._idle_reset_bytes = int(self._device_rate * 2 * self.IDLE_RESET_MS / 1000)
+        self._fade_samples = max(1, int(self._device_rate * self.FADE_MS / 1000))
         self._max_bytes = self._device_rate * 2 * 4  # ~4s cap
         self._buf = bytearray()
         self._lock = threading.Lock()
         self._armed = False
         self._idle_bytes = 0
+        self._last_sample = 0
 
         self._stream = sd.RawOutputStream(
             samplerate=self._device_rate,
@@ -224,20 +227,45 @@ class _VirtualMicSink:
                     self._armed = True
                 else:
                     outdata[:] = b"\x00" * need
+                    self._last_sample = 0
                     return
             have = len(self._buf)
             if have >= need:
-                outdata[:] = bytes(self._buf[:need])
+                outdata[:] = self._declick_block(bytes(self._buf[:need]))
                 del self._buf[:need]
                 self._idle_bytes = 0
             else:
-                outdata[:have] = bytes(self._buf)
-                outdata[have:] = b"\x00" * (need - have)
+                block = bytearray(need)
+                block[:have] = bytes(self._buf)
+                self._fade_out_tail(block, have)
+                outdata[:] = self._declick_block(bytes(block))
                 self._buf.clear()
                 silent_bytes = need - have if have else need
                 self._idle_bytes += silent_bytes
                 if self._idle_bytes >= self._idle_reset_bytes:
                     self._armed = False
+
+    def _declick_block(self, pcm: bytes) -> bytes:
+        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        if samples.size == 0:
+            return pcm
+        n = min(self._fade_samples, samples.size)
+        offset = self._last_sample - samples[0]
+        if offset:
+            samples[:n] += offset * np.linspace(1.0, 0.0, n, dtype=np.float32)
+        np.clip(np.round(samples), -32768, 32767, out=samples)
+        out = samples.astype(np.int16)
+        self._last_sample = int(out[-1])
+        return out.tobytes()
+
+    def _fade_out_tail(self, block: bytearray, audio_bytes: int) -> None:
+        if audio_bytes <= 0:
+            return
+        samples = np.frombuffer(block, dtype=np.int16, count=audio_bytes // 2).astype(np.float32)
+        n = min(self._fade_samples, samples.size)
+        samples[-n:] *= np.linspace(1.0, 0.0, n, dtype=np.float32)
+        np.clip(np.round(samples), -32768, 32767, out=samples)
+        block[:audio_bytes] = samples.astype(np.int16).tobytes()
 
     def write(self, pcm: bytes) -> None:
         if self._device_rate != SAMPLE_RATE:

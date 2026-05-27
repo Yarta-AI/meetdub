@@ -58,6 +58,8 @@ class RealtimeTranslator:
         self._send_lock = asyncio.Lock()
         self._connected = asyncio.Event()
         self._audio_seconds_sent = 0.0
+        self._input_transcript_items: set[str] = set()
+        self._output_transcript_items: set[str] = set()
 
     @property
     def cost_usd(self) -> float:
@@ -135,28 +137,27 @@ class RealtimeTranslator:
             audio_b64 = evt.get("delta") or evt.get("audio") or ""
             if audio_b64:
                 self._events.on_audio(base64.b64decode(audio_b64))
-        elif (
-            etype.endswith("output_transcript.delta") or etype == "response.audio_transcript.delta"
-        ):
-            delta = evt.get("delta", "")
+        elif self._is_output_transcript_delta(etype):
+            delta = _event_text(evt)
             if delta:
+                _remember_item(self._output_transcript_items, evt)
                 self._events.on_output_text(delta, False)
-        elif etype.endswith("output_transcript.done") or etype == "response.audio_transcript.done":
+        elif self._is_output_transcript_done(etype):
+            text = _event_text(evt)
+            if text and not _item_was_seen(self._output_transcript_items, evt):
+                self._events.on_output_text(text, False)
+            _forget_item(self._output_transcript_items, evt)
             self._events.on_output_text("", True)
-        elif (
-            etype.endswith("input_transcript.delta")
-            or etype == "conversation.item.input_audio_transcription.delta"
-        ):
-            delta = evt.get("delta", "")
+        elif self._is_input_transcript_delta(etype):
+            delta = _event_text(evt)
             if delta:
+                _remember_item(self._input_transcript_items, evt)
                 self._events.on_input_text(delta, False)
-        elif (
-            etype.endswith("input_transcript.done")
-            or etype == "conversation.item.input_audio_transcription.completed"
-        ):
-            text = evt.get("transcript", "")
-            if text:
+        elif self._is_input_transcript_done(etype):
+            text = _event_text(evt)
+            if text and not _item_was_seen(self._input_transcript_items, evt):
                 self._events.on_input_text(text, False)
+            _forget_item(self._input_transcript_items, evt)
             self._events.on_input_text("", True)
         elif etype == "error":
             err = evt.get("error") or {}
@@ -174,6 +175,64 @@ class RealtimeTranslator:
             self._events.on_status("listening…")
         else:
             log.info("unhandled event: %s · keys=%s", etype, list(evt.keys()))
+
+    @staticmethod
+    def _is_input_transcript_delta(etype: str) -> bool:
+        return etype in {
+            "session.input_transcript.delta",
+            "conversation.item.input_audio_transcription.delta",
+        } or etype.endswith(".input_transcript.delta")
+
+    @staticmethod
+    def _is_input_transcript_done(etype: str) -> bool:
+        return etype in {
+            "session.input_transcript.done",
+            "session.input_transcript.completed",
+            "conversation.item.input_audio_transcription.completed",
+        } or etype.endswith((".input_transcript.done", ".input_transcript.completed"))
+
+    @staticmethod
+    def _is_output_transcript_delta(etype: str) -> bool:
+        return etype in {
+            "session.output_transcript.delta",
+            "response.audio_transcript.delta",
+            "response.output_audio_transcript.delta",
+        } or etype.endswith(".output_transcript.delta")
+
+    @staticmethod
+    def _is_output_transcript_done(etype: str) -> bool:
+        return etype in {
+            "session.output_transcript.done",
+            "session.output_transcript.completed",
+            "response.audio_transcript.done",
+            "response.output_audio_transcript.done",
+        } or etype.endswith((".output_transcript.done", ".output_transcript.completed"))
+
+
+def _event_text(evt: dict) -> str:
+    return evt.get("delta") or evt.get("transcript") or evt.get("text") or ""
+
+
+def _item_key(evt: dict) -> str | None:
+    item_id = evt.get("item_id") or evt.get("response_id") or evt.get("event_id")
+    return str(item_id) if item_id else None
+
+
+def _remember_item(items: set[str], evt: dict) -> None:
+    item_id = _item_key(evt)
+    if item_id:
+        items.add(item_id)
+
+
+def _item_was_seen(items: set[str], evt: dict) -> bool:
+    item_id = _item_key(evt)
+    return bool(item_id and item_id in items)
+
+
+def _forget_item(items: set[str], evt: dict) -> None:
+    item_id = _item_key(evt)
+    if item_id:
+        items.discard(item_id)
 
 
 async def stream_translation(
