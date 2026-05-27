@@ -192,16 +192,19 @@ class _VirtualMicSink:
     """
 
     JITTER_MS = 100
+    IDLE_RESET_MS = 300
 
     def __init__(self, device: int | str, latency: float | str = "low") -> None:
         import threading
 
         self._device_rate = _device_rate(device)
         self._jitter_bytes = int(self._device_rate * 2 * self.JITTER_MS / 1000)
+        self._idle_reset_bytes = int(self._device_rate * 2 * self.IDLE_RESET_MS / 1000)
         self._max_bytes = self._device_rate * 2 * 4  # ~4s cap
         self._buf = bytearray()
         self._lock = threading.Lock()
         self._armed = False
+        self._idle_bytes = 0
 
         self._stream = sd.RawOutputStream(
             samplerate=self._device_rate,
@@ -226,17 +229,23 @@ class _VirtualMicSink:
             if have >= need:
                 outdata[:] = bytes(self._buf[:need])
                 del self._buf[:need]
+                self._idle_bytes = 0
             else:
                 outdata[:have] = bytes(self._buf)
                 outdata[have:] = b"\x00" * (need - have)
                 self._buf.clear()
-                self._armed = False
+                silent_bytes = need - have if have else need
+                self._idle_bytes += silent_bytes
+                if self._idle_bytes >= self._idle_reset_bytes:
+                    self._armed = False
 
     def write(self, pcm: bytes) -> None:
         if self._device_rate != SAMPLE_RATE:
             pcm = resample_pcm16(pcm, SAMPLE_RATE, self._device_rate)
         with self._lock:
             self._buf.extend(pcm)
+            if pcm:
+                self._idle_bytes = 0
             if len(self._buf) > self._max_bytes:
                 del self._buf[: len(self._buf) - self._max_bytes]
 
