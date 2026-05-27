@@ -102,8 +102,14 @@ class RealtimeTranslator:
     async def switch_language(self, target_language: str) -> None:
         async with self._send_lock:
             self._target_language = target_language
+            await self._clear_input_audio_buffer()
             await self._configure_session(target_language)
             self._events.on_status(f"language → {target_language}")
+
+    async def _clear_input_audio_buffer(self) -> None:
+        if self._ws is None:
+            return
+        await self._ws.send(json.dumps({"type": "session.input_audio_buffer.clear"}))
 
     async def send_audio(self, pcm16: bytes) -> None:
         if self._ws is None:

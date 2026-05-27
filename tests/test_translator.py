@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from meetdub.backend import Backend
 from meetdub.translator import RealtimeTranslator, TranslatorEvents
@@ -13,6 +14,14 @@ def _translator(input_events: list[tuple[str, bool]], output_events: list[tuple[
         on_error=lambda _: None,
     )
     return RealtimeTranslator(Backend("test", "wss://example.test", {}), "ja", events)
+
+
+class _FakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send(self, payload: str) -> None:
+        self.sent.append(json.loads(payload))
 
 
 def test_translation_session_input_transcript_delta_reaches_source_caption():
@@ -107,3 +116,19 @@ def test_realtime_input_audio_transcription_completed_without_delta_is_displayed
 
     assert input_events == [("Testing source captions", False), ("", True)]
     assert output_events == []
+
+
+def test_switch_language_clears_input_audio_buffer_before_session_update():
+    input_events: list[tuple[str, bool]] = []
+    output_events: list[tuple[str, bool]] = []
+    translator = _translator(input_events, output_events)
+    ws = _FakeWebSocket()
+    translator._ws = ws
+
+    asyncio.run(translator.switch_language("en"))
+
+    assert [event["type"] for event in ws.sent] == [
+        "session.input_audio_buffer.clear",
+        "session.update",
+    ]
+    assert ws.sent[1]["session"]["audio"]["output"]["language"] == "en"
