@@ -89,34 +89,48 @@ class MicCapture:
             self._stream.close()
 
 
-class _AudioSink:
-    """One sounddevice output stream fed by a background writer thread.
+def _device_rate(device: int | str) -> int:
+    try:
+        return int(sd.query_devices(device)["default_samplerate"]) or SAMPLE_RATE
+    except Exception:
+        return SAMPLE_RATE
 
-    Why a thread: sd.RawOutputStream.write() blocks until the device buffer
-    has space. Calling it from the asyncio loop (where the WS receive task
-    lives) stalls every other coroutine, so audio events pile up and arrive
-    in bursts — the classic "ぷつぷつ" symptom. We push chunks to a queue
-    and let a dedicated thread drain them; asyncio never waits on audio I/O.
 
-    The queue is bounded (~1 s) so a stuck device doesn't grow memory; on
-    overflow we drop the oldest chunk, since lagging by more than a second
-    is already worse than a dropout.
+def _is_virtual_loopback(device: int | str) -> bool:
+    """A loopback / virtual-mic device exposes BOTH input and output channels
+    (BlackHole 2ch, Loopback, "Microsoft Teams Audio"). Real speakers and
+    headphones are output-only. We use this to decide which sink a device
+    needs — only virtual mics require the continuous-signal treatment."""
+    try:
+        info = sd.query_devices(device)
+        return info["max_input_channels"] > 0 and info["max_output_channels"] > 0
+    except Exception:
+        return False
+
+
+class _DirectSink:
+    """Low-latency output for a *real* device (headphones, speakers).
+
+    A background thread drains a queue and does blocking sd writes. Between
+    utterances the queue is simply empty and nothing is written — the gap is
+    real silence, which is exactly what you want on a speaker. Whole 200ms
+    chunks are written atomically, so any underrun lands on a chunk boundary
+    (where the model's audio is already near-silent) rather than mid-word.
+
+    This is the original behaviour that sounded clean on AirPods. No jitter
+    buffer, no added latency. write() only does a non-blocking queue put, so
+    the asyncio loop is never stalled by the blocking sd write.
     """
 
-    QUEUE_MAX = 50  # ~10s of 200ms chunks; we never approach this in healthy state
+    QUEUE_MAX = 64
 
     def __init__(self, device: int | str, latency: float | str = "low") -> None:
-        """latency: 'low' (device minimum, ~10-20ms on macOS — closest to real-time),
-        'high' (smoothest, ~150-200ms), or an explicit seconds value.
-
-        The cookbook doesn't address this trade-off; we default to 'low' because
-        translation already adds 1-2s of inherent latency, and any playback
-        latency stacks on top. If you hear stutter, bump via --latency-ms."""
         import queue
         import threading
 
+        self._device_rate = _device_rate(device)
         self._stream = sd.RawOutputStream(
-            samplerate=SAMPLE_RATE,
+            samplerate=self._device_rate,
             device=device,
             channels=1,
             dtype=DTYPE,
@@ -134,7 +148,6 @@ class _AudioSink:
         try:
             self._q.put_nowait(pcm)
         except queue.Full:
-            # Drop oldest to keep latency bounded.
             with contextlib.suppress(queue.Empty):
                 self._q.get_nowait()
             with contextlib.suppress(queue.Full):
@@ -148,25 +161,107 @@ class _AudioSink:
                 pcm = self._q.get(timeout=0.1)
             except queue.Empty:
                 continue
+            if self._device_rate != SAMPLE_RATE:
+                pcm = resample_pcm16(pcm, SAMPLE_RATE, self._device_rate)
             try:
                 self._stream.write(pcm)
             except Exception:
-                # Device may be torn down during shutdown; bail quietly.
                 return
 
     def close(self) -> None:
         self._stop.set()
         self._thread.join(timeout=1)
-        try:
+        with contextlib.suppress(Exception):
             self._stream.stop()
             self._stream.close()
-        except Exception:
-            pass
+
+
+class _VirtualMicSink:
+    """Continuous output for a *virtual mic* (BlackHole) feeding another app.
+
+    BlackHole is a microphone as far as Teams is concerned, and a real mic
+    never stops — it emits silence when nobody speaks. A write-when-we-have-
+    data stream leaves holes between translated chunks; Teams' pipeline reads
+    those holes as a mic cutting in and out → choppy, garbled downstream.
+
+    So the stream runs forever via a PortAudio callback: it pulls from `_buf`
+    and emits silence on underrun rather than stalling. A small jitter buffer
+    smooths chunk-boundary timing; clicks that slip through are absorbed by
+    Teams' own downstream jitter buffer, so we keep the cushion modest to
+    stay close to real time.
+    """
+
+    JITTER_MS = 100
+
+    def __init__(self, device: int | str, latency: float | str = "low") -> None:
+        import threading
+
+        self._device_rate = _device_rate(device)
+        self._jitter_bytes = int(self._device_rate * 2 * self.JITTER_MS / 1000)
+        self._max_bytes = self._device_rate * 2 * 4  # ~4s cap
+        self._buf = bytearray()
+        self._lock = threading.Lock()
+        self._armed = False
+
+        self._stream = sd.RawOutputStream(
+            samplerate=self._device_rate,
+            device=device,
+            channels=1,
+            dtype=DTYPE,
+            latency=latency,
+            callback=self._callback,
+        )
+        self._stream.start()
+
+    def _callback(self, outdata, frames, time_info, status) -> None:
+        need = frames * 2
+        with self._lock:
+            if not self._armed:
+                if len(self._buf) >= self._jitter_bytes:
+                    self._armed = True
+                else:
+                    outdata[:] = b"\x00" * need
+                    return
+            have = len(self._buf)
+            if have >= need:
+                outdata[:] = bytes(self._buf[:need])
+                del self._buf[:need]
+            else:
+                outdata[:have] = bytes(self._buf)
+                outdata[have:] = b"\x00" * (need - have)
+                self._buf.clear()
+                self._armed = False
+
+    def write(self, pcm: bytes) -> None:
+        if self._device_rate != SAMPLE_RATE:
+            pcm = resample_pcm16(pcm, SAMPLE_RATE, self._device_rate)
+        with self._lock:
+            self._buf.extend(pcm)
+            if len(self._buf) > self._max_bytes:
+                del self._buf[: len(self._buf) - self._max_bytes]
+
+    def close(self) -> None:
+        with contextlib.suppress(Exception):
+            self._stream.stop()
+            self._stream.close()
+
+
+def _make_sink(device: int | str, latency: float | str):
+    """Virtual mics need the continuous callback sink; real devices get the
+    low-latency direct sink."""
+    if _is_virtual_loopback(device):
+        return _VirtualMicSink(device, latency=latency)
+    return _DirectSink(device, latency=latency)
 
 
 class Speaker:
-    """Plays PCM16 chunks to one or two output devices without blocking the
-    asyncio loop. Receive `output_audio.delta`, decode base64, hand off here."""
+    """Plays PCM16 chunks to one or two output devices.
+
+    The output device is auto-classified: a virtual mic (BlackHole) gets the
+    continuous callback sink so Teams sees an unbroken signal; a real device
+    (headphones, speakers) gets the low-latency direct sink. Receive
+    `output_audio.delta`, decode base64, hand off here.
+    """
 
     def __init__(
         self,
@@ -174,29 +269,50 @@ class Speaker:
         monitor_device: int | str | None = None,
         latency: float | str = "low",
     ) -> None:
-        self._primary = _AudioSink(primary_device, latency=latency)
-        self._monitor: _AudioSink | None = (
-            _AudioSink(monitor_device, latency=latency) if monitor_device is not None else None
-        )
+        self._primary = _make_sink(primary_device, latency)
+        self._monitor = _make_sink(monitor_device, latency) if monitor_device is not None else None
 
     def start(self) -> None:
-        pass  # sinks start their own streams + threads in __init__
+        pass  # sinks start their own streams in __init__
 
     def write(self, pcm: bytes) -> None:
-        """Send translated audio to BlackHole and (optionally) the monitor."""
+        """Send translated audio to the primary output and (optionally) the monitor."""
         self._primary.write(pcm)
         if self._monitor:
             self._monitor.write(pcm)
 
     def write_primary(self, pcm: bytes) -> None:
-        """Send to BlackHole only — used for attenuated mic passthrough so we
-        don't double the user's own voice in their headphones."""
+        """Send to the primary output only — used for attenuated mic passthrough
+        so we don't double the user's own voice in their headphones."""
         self._primary.write(pcm)
 
     def close(self) -> None:
         self._primary.close()
         if self._monitor:
             self._monitor.close()
+
+
+def resample_pcm16(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Resample mono int16 PCM from src_rate to dst_rate via linear interpolation.
+
+    Linear interp is more than enough for speech upsampling (e.g. 24k→48k for
+    BlackHole). It introduces mild high-frequency rolloff but no artefacts —
+    unlike a sample-rate mismatch, which garbles the audio outright.
+    """
+    if src_rate == dst_rate or not pcm:
+        return pcm
+    src = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    if src.size == 0:
+        return pcm
+    n_dst = int(round(src.size * dst_rate / src_rate))
+    if n_dst <= 0:
+        return b""
+    positions = np.linspace(0.0, src.size - 1, n_dst)
+    dst = np.interp(positions, np.arange(src.size), src)
+    # Round (not truncate) and clip before narrowing to int16 — avoids
+    # quantisation bias and any chance of an overflow wrap.
+    dst = np.clip(np.round(dst), -32768, 32767)
+    return dst.astype(np.int16).tobytes()
 
 
 def attenuate_pcm16(pcm: bytes, gain: float) -> bytes:
