@@ -77,7 +77,13 @@ class Session:
         latency: float | str = (
             "low" if self.cfg.output_latency_ms <= 0 else self.cfg.output_latency_ms / 1000.0
         )
-        speaker = audio.Speaker(out_dev.index, monitor_idx, latency=latency)
+        speaker = audio.Speaker(
+            out_dev.index,
+            monitor_idx,
+            latency=latency,
+            sync_monitor=self.cfg.monitor_sync,
+            virtual_jitter_ms=self.cfg.virtual_jitter_ms,
+        )
         speaker.start()
 
         transcript: TranscriptWriter | None = None

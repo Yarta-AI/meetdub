@@ -17,6 +17,8 @@ def _virtual_sink_without_stream() -> audio._VirtualMicSink:
     sink._armed = True
     sink._idle_bytes = 0
     sink._last_sample = 0
+    sink._queued_tail_sample = 0
+    sink._has_queued_tail = False
     return sink
 
 

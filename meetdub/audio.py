@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from dataclasses import dataclass
 
 import numpy as np
 import sounddevice as sd
+
+log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 24_000
 CHANNELS_IN = 1
@@ -195,11 +198,17 @@ class _VirtualMicSink:
     IDLE_RESET_MS = 300
     FADE_MS = 3
 
-    def __init__(self, device: int | str, latency: float | str = "low") -> None:
+    def __init__(
+        self,
+        device: int | str,
+        latency: float | str = "low",
+        jitter_ms: int | None = None,
+    ) -> None:
         import threading
 
+        jitter_ms = self.JITTER_MS if jitter_ms is None else jitter_ms
         self._device_rate = _device_rate(device)
-        self._jitter_bytes = int(self._device_rate * 2 * self.JITTER_MS / 1000)
+        self._jitter_bytes = int(self._device_rate * 2 * jitter_ms / 1000)
         self._idle_reset_bytes = int(self._device_rate * 2 * self.IDLE_RESET_MS / 1000)
         self._fade_samples = max(1, int(self._device_rate * self.FADE_MS / 1000))
         self._max_bytes = self._device_rate * 2 * 4  # ~4s cap
@@ -208,6 +217,8 @@ class _VirtualMicSink:
         self._armed = False
         self._idle_bytes = 0
         self._last_sample = 0
+        self._queued_tail_sample = 0
+        self._has_queued_tail = False
 
         self._stream = sd.RawOutputStream(
             samplerate=self._device_rate,
@@ -271,11 +282,33 @@ class _VirtualMicSink:
         if self._device_rate != SAMPLE_RATE:
             pcm = resample_pcm16(pcm, SAMPLE_RATE, self._device_rate)
         with self._lock:
+            pcm = self._declick_append(pcm)
             self._buf.extend(pcm)
             if pcm:
                 self._idle_bytes = 0
+                self._queued_tail_sample = int(np.frombuffer(pcm, dtype=np.int16)[-1])
+                self._has_queued_tail = True
             if len(self._buf) > self._max_bytes:
                 del self._buf[: len(self._buf) - self._max_bytes]
+
+    def _declick_append(self, pcm: bytes) -> bytes:
+        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        if samples.size == 0:
+            return pcm
+
+        if self._buf:
+            previous = int(np.frombuffer(self._buf[-2:], dtype=np.int16)[0])
+        elif self._has_queued_tail:
+            previous = self._queued_tail_sample
+        else:
+            previous = self._last_sample
+
+        n = min(self._fade_samples, samples.size)
+        offset = previous - samples[0]
+        if offset:
+            samples[:n] += offset * np.linspace(1.0, 0.0, n, dtype=np.float32)
+        np.clip(np.round(samples), -32768, 32767, out=samples)
+        return samples.astype(np.int16).tobytes()
 
     def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -283,11 +316,26 @@ class _VirtualMicSink:
             self._stream.close()
 
 
-def _make_sink(device: int | str, latency: float | str):
+def _make_sink(
+    device: int | str,
+    latency: float | str,
+    *,
+    force_continuous: bool = False,
+    jitter_ms: int | None = None,
+):
     """Virtual mics need the continuous callback sink; real devices get the
     low-latency direct sink."""
-    if _is_virtual_loopback(device):
-        return _VirtualMicSink(device, latency=latency)
+    if force_continuous or _is_virtual_loopback(device):
+        log.info(
+            "audio sink: continuous device=%r latency=%r jitter_ms=%s idle_reset_ms=%s fade_ms=%s",
+            device,
+            latency,
+            _VirtualMicSink.JITTER_MS if jitter_ms is None else jitter_ms,
+            _VirtualMicSink.IDLE_RESET_MS,
+            _VirtualMicSink.FADE_MS,
+        )
+        return _VirtualMicSink(device, latency=latency, jitter_ms=jitter_ms)
+    log.info("audio sink: direct device=%r latency=%r", device, latency)
     return _DirectSink(device, latency=latency)
 
 
@@ -305,9 +353,21 @@ class Speaker:
         primary_device: int | str,
         monitor_device: int | str | None = None,
         latency: float | str = "low",
+        sync_monitor: bool = False,
+        virtual_jitter_ms: int | None = None,
     ) -> None:
-        self._primary = _make_sink(primary_device, latency)
-        self._monitor = _make_sink(monitor_device, latency) if monitor_device is not None else None
+        primary_is_virtual = _is_virtual_loopback(primary_device)
+        self._primary = _make_sink(primary_device, latency, jitter_ms=virtual_jitter_ms)
+        self._monitor = (
+            _make_sink(
+                monitor_device,
+                latency,
+                force_continuous=sync_monitor and primary_is_virtual,
+                jitter_ms=virtual_jitter_ms,
+            )
+            if monitor_device is not None
+            else None
+        )
 
     def start(self) -> None:
         pass  # sinks start their own streams in __init__

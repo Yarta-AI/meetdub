@@ -19,6 +19,7 @@ class Config:
     input_device: str | None = None
     output_device: str = "BlackHole 2ch"
     monitor_device: str | None = None
+    monitor_sync: bool = False
     push_to_translate: bool = False
     vad_enabled: bool = True
     save_transcripts: bool = True
@@ -34,6 +35,7 @@ class Config:
     # but may stutter under jitter). Otherwise milliseconds — higher = smoother
     # playback at the cost of perceived lag.
     output_latency_ms: int = 0
+    virtual_jitter_ms: int = 100
 
     # Backend selection: "openai" (default) or "azure"
     backend: str = "openai"

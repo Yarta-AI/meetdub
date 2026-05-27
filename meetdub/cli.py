@@ -107,6 +107,13 @@ def run(
     monitor_device: Annotated[
         str | None, typer.Option("--monitor", help="Also play translation to this device")
     ] = None,
+    monitor_sync: Annotated[
+        bool,
+        typer.Option(
+            "--monitor-sync",
+            help="Delay monitor playback to match BlackHole/meeting-app timing",
+        ),
+    ] = False,
     push_to_translate: Annotated[
         bool, typer.Option("--ptt", help="Translate only while Space is held")
     ] = False,
@@ -137,6 +144,15 @@ def run(
         typer.Option(
             "--latency-ms",
             help="Output buffer in ms. 0 = device minimum (real-time, may stutter). Bump if you hear choppy audio.",
+            min=0,
+            max=500,
+        ),
+    ] = None,
+    virtual_jitter_ms: Annotated[
+        int | None,
+        typer.Option(
+            "--virtual-jitter-ms",
+            help="Initial jitter buffer for virtual mic output. Lower = less lag, higher = smoother.",
             min=0,
             max=500,
         ),
@@ -173,6 +189,7 @@ def run(
         cfg.output_device = output_device
     if monitor_device:
         cfg.monitor_device = monitor_device
+    cfg.monitor_sync = monitor_sync
     cfg.push_to_translate = push_to_translate
     cfg.vad_enabled = not no_vad
     cfg.save_transcripts = not no_transcript
@@ -182,6 +199,8 @@ def run(
         cfg.passthrough_gain = 0.15
     if latency_ms is not None:
         cfg.output_latency_ms = latency_ms
+    if virtual_jitter_ms is not None:
+        cfg.virtual_jitter_ms = virtual_jitter_ms
 
     if azure or azure_endpoint or azure_deployment:
         cfg.backend = "azure"
@@ -206,6 +225,8 @@ def run(
             format="%(asctime)s %(levelname)s %(name)s %(message)s",
         )
         console.print(f"[dim]debug log → {CONFIG_DIR / 'debug.log'}[/]")
+        logging.getLogger(__name__).debug("meetdub package path: %s", __import__("meetdub").__file__)
+        logging.getLogger(__name__).debug("audio module path: %s", audio.__file__)
     else:
         logging.basicConfig(level=logging.WARNING)
     session = Session(cfg, target_override=to)
