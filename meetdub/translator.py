@@ -127,6 +127,8 @@ class RealtimeTranslator:
     async def _dispatch(self, evt: dict) -> None:
         etype = evt.get("type", "")
         log.debug("event: %s", etype)
+        if "transcript" in etype or "transcription" in etype:
+            log.debug("transcript event: %s", evt)
         # Audio chunk — match both /translations (session.output_audio.delta)
         # and /realtime (response.audio.delta) shapes.
         if (
@@ -179,17 +181,27 @@ class RealtimeTranslator:
     @staticmethod
     def _is_input_transcript_delta(etype: str) -> bool:
         return etype in {
+            "session.input_audio_transcription.delta",
             "session.input_transcript.delta",
             "conversation.item.input_audio_transcription.delta",
-        } or etype.endswith(".input_transcript.delta")
+        } or etype.endswith((".input_transcript.delta", ".input_audio_transcription.delta"))
 
     @staticmethod
     def _is_input_transcript_done(etype: str) -> bool:
         return etype in {
+            "session.input_audio_transcription.done",
+            "session.input_audio_transcription.completed",
             "session.input_transcript.done",
             "session.input_transcript.completed",
             "conversation.item.input_audio_transcription.completed",
-        } or etype.endswith((".input_transcript.done", ".input_transcript.completed"))
+        } or etype.endswith(
+            (
+                ".input_transcript.done",
+                ".input_transcript.completed",
+                ".input_audio_transcription.done",
+                ".input_audio_transcription.completed",
+            )
+        )
 
     @staticmethod
     def _is_output_transcript_delta(etype: str) -> bool:

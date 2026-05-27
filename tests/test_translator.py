@@ -43,6 +43,34 @@ def test_translation_session_input_transcript_delta_reaches_source_caption():
     assert output_events == []
 
 
+def test_translation_session_input_audio_transcription_delta_reaches_source_caption():
+    input_events: list[tuple[str, bool]] = []
+    output_events: list[tuple[str, bool]] = []
+    translator = _translator(input_events, output_events)
+
+    asyncio.run(
+        translator._dispatch(
+            {
+                "type": "session.input_audio_transcription.delta",
+                "item_id": "item_1",
+                "delta": "Source",
+            }
+        )
+    )
+    asyncio.run(
+        translator._dispatch(
+            {
+                "type": "session.input_audio_transcription.completed",
+                "item_id": "item_1",
+                "transcript": "Source",
+            }
+        )
+    )
+
+    assert input_events == [("Source", False), ("", True)]
+    assert output_events == []
+
+
 def test_translation_session_input_transcript_completed_without_delta_is_displayed():
     input_events: list[tuple[str, bool]] = []
     output_events: list[tuple[str, bool]] = []
