@@ -197,16 +197,19 @@ class _VirtualMicSink:
     JITTER_MS = 100
     IDLE_RESET_MS = 300
     FADE_MS = 3
+    OUTPUT_GAIN = 0.8
 
     def __init__(
         self,
         device: int | str,
         latency: float | str = "low",
         jitter_ms: int | None = None,
+        gain: float | None = None,
     ) -> None:
         import threading
 
         jitter_ms = self.JITTER_MS if jitter_ms is None else jitter_ms
+        self._gain = self.OUTPUT_GAIN if gain is None else gain
         self._device_rate = _device_rate(device)
         self._jitter_bytes = int(self._device_rate * 2 * jitter_ms / 1000)
         self._idle_reset_bytes = int(self._device_rate * 2 * self.IDLE_RESET_MS / 1000)
@@ -281,6 +284,7 @@ class _VirtualMicSink:
     def write(self, pcm: bytes) -> None:
         if self._device_rate != SAMPLE_RATE:
             pcm = resample_pcm16(pcm, SAMPLE_RATE, self._device_rate)
+        pcm = attenuate_pcm16(pcm, self._gain)
         with self._lock:
             pcm = self._declick_append(pcm)
             self._buf.extend(pcm)
@@ -322,19 +326,21 @@ def _make_sink(
     *,
     force_continuous: bool = False,
     jitter_ms: int | None = None,
+    gain: float | None = None,
 ):
     """Virtual mics need the continuous callback sink; real devices get the
     low-latency direct sink."""
     if force_continuous or _is_virtual_loopback(device):
         log.info(
-            "audio sink: continuous device=%r latency=%r jitter_ms=%s idle_reset_ms=%s fade_ms=%s",
+            "audio sink: continuous device=%r latency=%r jitter_ms=%s gain=%s idle_reset_ms=%s fade_ms=%s",
             device,
             latency,
             _VirtualMicSink.JITTER_MS if jitter_ms is None else jitter_ms,
+            _VirtualMicSink.OUTPUT_GAIN if gain is None else gain,
             _VirtualMicSink.IDLE_RESET_MS,
             _VirtualMicSink.FADE_MS,
         )
-        return _VirtualMicSink(device, latency=latency, jitter_ms=jitter_ms)
+        return _VirtualMicSink(device, latency=latency, jitter_ms=jitter_ms, gain=gain)
     log.info("audio sink: direct device=%r latency=%r", device, latency)
     return _DirectSink(device, latency=latency)
 
@@ -355,15 +361,22 @@ class Speaker:
         latency: float | str = "low",
         sync_monitor: bool = False,
         virtual_jitter_ms: int | None = None,
+        virtual_gain: float | None = None,
     ) -> None:
         primary_is_virtual = _is_virtual_loopback(primary_device)
-        self._primary = _make_sink(primary_device, latency, jitter_ms=virtual_jitter_ms)
+        self._primary = _make_sink(
+            primary_device,
+            latency,
+            jitter_ms=virtual_jitter_ms,
+            gain=virtual_gain,
+        )
         self._monitor = (
             _make_sink(
                 monitor_device,
                 latency,
                 force_continuous=sync_monitor and primary_is_virtual,
                 jitter_ms=virtual_jitter_ms,
+                gain=virtual_gain,
             )
             if monitor_device is not None
             else None

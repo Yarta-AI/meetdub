@@ -83,6 +83,7 @@ class Session:
             latency=latency,
             sync_monitor=self.cfg.monitor_sync,
             virtual_jitter_ms=self.cfg.virtual_jitter_ms,
+            virtual_gain=self.cfg.virtual_gain,
         )
         speaker.start()
 

@@ -36,6 +36,7 @@ class Config:
     # playback at the cost of perceived lag.
     output_latency_ms: int = 0
     virtual_jitter_ms: int = 100
+    virtual_gain: float = 0.8
 
     # Backend selection: "openai" (default) or "azure"
     backend: str = "openai"

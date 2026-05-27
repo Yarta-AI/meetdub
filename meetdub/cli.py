@@ -157,6 +157,15 @@ def run(
             max=500,
         ),
     ] = None,
+    virtual_gain: Annotated[
+        float | None,
+        typer.Option(
+            "--virtual-gain",
+            help="Gain for virtual mic output. Lower if Teams/BlackHole sounds clipped.",
+            min=0.1,
+            max=1.0,
+        ),
+    ] = None,
     azure: Annotated[
         bool, typer.Option("--azure", help="Use Azure OpenAI instead of api.openai.com")
     ] = False,
@@ -201,6 +210,8 @@ def run(
         cfg.output_latency_ms = latency_ms
     if virtual_jitter_ms is not None:
         cfg.virtual_jitter_ms = virtual_jitter_ms
+    if virtual_gain is not None:
+        cfg.virtual_gain = virtual_gain
 
     if azure or azure_endpoint or azure_deployment:
         cfg.backend = "azure"
